@@ -32,6 +32,21 @@ agents:
     - "log> "
     - "repro> "
 
+# 控制面 server（VPS 常驻唯一入口；§1.5 两层架构）
+control_plane:
+  host: "0.0.0.0"
+  port: 8788
+  token: ""                # 或环境变量 AUTOTEST_CP_TOKEN
+  ttl: 30.0                # 网关心跳超时（秒）
+
+# 硬件网关向控制面注册（M0 server 侧跑 run_gateway_register 用）
+gateway_reg:
+  cp_url: "http://localhost:8788"   # 家用 tailscale / 公司内网
+  cp_token: ""
+  id: "gw-windows-lab"
+  boards: ["boardA"]
+  interval: 10.0
+
 boards:
   boardA:
     port: COM5             # Windows；Linux 用 /dev/autotest/boardA 等 udev 别名

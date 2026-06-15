@@ -62,12 +62,34 @@ class AgentConfig(BaseModel):
     )
 
 
+class ControlPlaneConfig(BaseModel):
+    """控制面 server（VPS 常驻唯一入口）配置。"""
+
+    host: str = "0.0.0.0"
+    port: int = 8788
+    token: str = ""
+    ttl: float = 30.0  # 网关心跳超时（秒），超过判离线
+
+
+class GatewayRegConfig(BaseModel):
+    """硬件网关向控制面注册的配置（M0 server 侧用）。家用 cp_url 填 tailscale，公司填内网。"""
+
+    cp_url: str = "http://localhost:8788"
+    cp_token: str = ""
+    id: str = "gw-windows-lab"
+    boards: list[str] = Field(default_factory=lambda: ["boardA"])
+    interval: float = 10.0
+    register_on_start: bool = False
+
+
 class AppConfig(BaseModel):
     boards: dict[str, BoardConfig] = Field(default_factory=dict)
     server: ServerConfig = Field(default_factory=ServerConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     mcp: McpClientConfig = Field(default_factory=McpClientConfig)
     agents: AgentConfig = Field(default_factory=AgentConfig)
+    control_plane: ControlPlaneConfig = Field(default_factory=ControlPlaneConfig)
+    gateway_reg: GatewayRegConfig = Field(default_factory=GatewayRegConfig)
 
 
 class EnvSettings(BaseSettings):
