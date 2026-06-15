@@ -1,0 +1,104 @@
+"""编排 CLI：用 LangGraph 状态机跑完整闭环（含重试 + 人工门）。
+
+  # 全 fake 全自动（auto_approve，演示重试/终态）
+  python -m autotest_mcp.run_orchestrate BUG-123 --fake --source /tmp/fw --kb /tmp/kb.json
+
+  # 真实：跑到人工门暂停，人合并 PR 后在 stdin 确认续跑
+  ANTHROPIC_API_KEY=... python -m autotest_mcp.run_orchestrate BUG-123 --source <仓库>
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import sys
+
+from langgraph.types import Command
+
+from .config import load_config
+from .defects.jira import MockJiraClient
+from .git_client import FakeGitClient, GhGitClient
+from .knowledge.store import FileKnowledgeStore
+from .llm import LLM, default_client
+from .mcp_client import FakeHardwareClient, McpHardwareClient
+from .orchestrator import Deps, build_orchestrator
+from .run_m1 import _StubLLM
+
+
+def _build_llm(cfg, fake):
+    if fake:
+        from .testing import FakeLLM
+
+        return FakeLLM()
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return LLM(default_client(), model=cfg.agents.model, effort=cfg.agents.effort)
+    return _StubLLM(model=cfg.agents.model, effort=cfg.agents.effort)
+
+
+def _real_build_fn(cfg):
+    from .tools.builder import build as build_fw
+
+    return lambda src: build_fw(src, idf_version=cfg.tools.idf_version, backend=cfg.tools.builder_backend)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="LangGraph 状态机编排")
+    ap.add_argument("defect_id")
+    ap.add_argument("--config", default="config/boards.yaml")
+    ap.add_argument("--defects", default="config/defects.example.yaml")
+    ap.add_argument("--board", default="boardA")
+    ap.add_argument("--source", default=".")
+    ap.add_argument("--kb", default="")
+    ap.add_argument("--fake", action="store_true")
+    ap.add_argument("--max-attempts", type=int, default=2)
+    args = ap.parse_args()
+
+    cfg = load_config(args.config)
+    llm = _build_llm(cfg, args.fake)
+    jira = MockJiraClient(args.defects)
+    knowledge = FileKnowledgeStore(args.kb) if args.kb else None
+    # fake：第 1 次 capture(M1复现) 有 panic，之后(复测) 不再 panic → 演示"复现→修复→通过"
+    hardware = FakeHardwareClient(args.board, panic_first_n=1) if args.fake else McpHardwareClient(cfg.mcp.url, cfg.mcp.token, args.board)
+    git = FakeGitClient() if args.fake else GhGitClient()
+
+    if args.fake:
+        from pathlib import Path
+
+        src = Path(args.source) / "components/button"
+        src.mkdir(parents=True, exist_ok=True)
+        (src / "button.c").write_text("void fire(void){ handle->cb(ev); }\n")
+
+    deps = Deps(
+        llm=llm, hardware=hardware, git=git, knowledge=knowledge, jira=jira,
+        repo_dir=args.source, board_id=args.board,
+        whitelist=cfg.agents.test_command_whitelist, addr2line=cfg.tools.addr2line,
+        build_fn=(lambda s: {"ok": True, "build_dir": s}) if args.fake else _real_build_fn(cfg),
+        auto_approve=args.fake,
+    )
+    graph = build_orchestrator(deps, max_attempts=args.max_attempts)
+    cfg_thread = {"configurable": {"thread_id": f"{args.defect_id}-1"}}
+
+    async def run():
+        result = await graph.ainvoke({"defect_id": args.defect_id}, cfg_thread)
+        state = graph.get_state(cfg_thread)
+        # 若停在人工门（interrupt），等人确认后续跑
+        if state.next and not args.fake:
+            pr = state.values.get("fix").pr_url if state.values.get("fix") else ""
+            print(f"[gate] 请 review & 合并 PR: {pr}")
+            input("合并完成后回车继续...")
+            result = await graph.ainvoke(Command(resume=True), cfg_thread)
+        return result
+
+    final = asyncio.run(run())
+    print("\n=== 最终状态 ===")
+    print(f"verdict: {final.get('verdict')}")
+    print(f"attempts: {final.get('attempt')}")
+    if final.get("case_id"):
+        print(f"case_id: {final.get('case_id')}")
+    print("notes:")
+    for n in final.get("notes", []):
+        print(f"  - {n}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

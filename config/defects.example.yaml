@@ -1,0 +1,14 @@
+# mock 缺陷库 —— 初期不接公司真实 Jira，本地跑通闭环用。
+# 字段与 defects/models.py 的 Defect 对齐；repro_steps 是结构化字段（不靠自由文本）。
+defects:
+  - id: BUG-123
+    title: 长按 USER 键触发 panic（StoreProhibited）
+    severity: critical
+    summary: "固件在长按 USER 键处理回调里访问了已释放的外设句柄，概率性 panic。"
+    expected: "长按 USER 键后系统正常进入低功耗，串口打印 LOW_POWER_ENTER。"
+    actual: "概率性 Guru Meditation Error: StoreProhibited，backtrace 指向按键回调。"
+    firmware_ref: ""        # 真实运行时填 build 目录或 .bin；fake 模式留空即可
+    repro_steps:
+      - { action: serial_cmd, target: "test> enable_button_log", note: "打开按键回调日志" }
+      - { action: press_button, target: "user", note: "长按 USER 键" }
+      - { action: wait, target: "2", note: "等待回调触发" }

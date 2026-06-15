@@ -1,0 +1,42 @@
+# autotest 配置样板 —— 复制为 boards.yaml 后按实际填写
+# 网络层不绑 tailscale：家用原型把 host 填 tailscale 网卡 IP，公司填内网/VPN IP。
+
+server:
+  transport: http          # http | stdio
+  host: "0.0.0.0"          # bind host；家用可填 tailscale IP（100.x.y.z），公司填内网 IP
+  port: 8787
+  token: ""                # Bearer token；生产从环境变量 AUTOTEST_TOKEN 注入，勿入库
+  board_lock_policy: queue # queue（排队） | reject（占用中立即返回 busy）
+  mtls:
+    enabled: false         # 公司环境建议开
+    server_cert: ""
+    server_key: ""
+    client_ca: ""          # 校验 client 证书的 CA
+
+tools:
+  idf_version: v5.3        # 决定 espressif/idf:<tag> 镜像
+  addr2line: ""            # 留空则自动从 PATH / IDF_PATH 发现
+  builder_backend: docker  # docker | local（无 Docker 时降级直调 idf.py）
+
+# 编排器侧连接硬件网关（家用 URL=tailscale，公司=内网）
+mcp:
+  url: "http://localhost:8787/mcp"
+  token: ""                # 与硬件网关 server.token 一致；或用 AUTOTEST_TOKEN
+
+# 智能体（M1）
+agents:
+  model: claude-opus-4-8
+  effort: high
+  test_command_whitelist:  # ReproPlanner 注入的串口命令必须命中此前缀
+    - "test> "
+    - "log> "
+    - "repro> "
+
+boards:
+  boardA:
+    port: COM5             # Windows；Linux 用 /dev/autotest/boardA 等 udev 别名
+    baud: 115200
+    buttons:
+      boot: { relay: 1 }  # 继电器通道号
+      user: { relay: 2 }
+    power_relay: 0         # 继电器通道号；null = 不做物理控电，用 esptool 软复位

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autotest-mcp"
+version = "0.1.0"
+description = "ESP32-S3 嵌入式自动化硬件 MCP 网关（autotest_iot M0）"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2",
+    "pyserial>=3.5",
+    "esptool>=4.7",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pyyaml>=6.0",
+    "uvicorn>=0.29",
+    "starlette>=0.37",
+    "anthropic>=0.60",
+    "anyio>=4.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.23"]
+vector = ["chromadb>=0.5"]
+
+[project.scripts]
+autotest-mcp = "autotest_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autotest_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
