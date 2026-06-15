@@ -1,14 +1,41 @@
-# autotest_iot — ESP32-S3 嵌入式自动化硬件 MCP 网关（M0）
+# autotest_iot — ESP32-S3 嵌入式自动化复测/修复闭环
 
-把"硬件闭环"最底层的确定性能力（编译 / 烧录 / 抓串口 log / 符号化 backtrace / 继电器控电）做成一个 **MCP server**，让本地或远程的智能体作为 client 调用。
+把"取 Jira 缺陷 → 智能体操控硬件复测 → 抓 log 诊断 → 改代码 → 编译烧录 → 复测 → 知识沉淀"做成**软硬一体的智能体闭环**，全部可注入、可单测（**77 测试全绿**）。
 
-> 设计与边界见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。M0 只覆盖硬件能力；Jira/Git/知识库/编排/agent 是 M1+。
+```
+Jira缺陷 ─▶ ReproPlanner ─▶ 硬件复现 ─▶ 符号化 ─▶ Diagnostician
+   ─▶ Fixer ─▶ PR(人工门: 飞书审批 / PR合并) ─▶ rebuild ─▶ flash ─▶ 复测 ─▶ verdict
+                                          └─ pass → Summarizer → 知识库 ──(下次召回)
+控制面(VPS唯一入口) + 硬件网关注册/心跳/离线队列 + LangGraph 状态机(重试/回退/终态)
+真 Jira + 真 GitHub + 飞书审批
+```
 
-## M0 能做什么
+## 🚀 部署到真实环境
 
-注册 7 个 MCP tool：
+**完整逐步配置 + 验证 + 排错见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。** 设计见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-| tool | 作用 | 是否占用板级锁 |
+快速起步：
+
+```bash
+git clone https://github.com/liuyuyan6100/autotest-iot.git && cd autotest-iot
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[test]" && pytest -q            # 无硬件/无 key 也应全绿
+cp config/boards.yaml.example config/boards.yaml  # 按 DEPLOY.md §3 填
+# 无 key/无板先跑通逻辑：
+python -m autotest_mcp.run_orchestrate BUG-123 --fake --source /tmp/fw --gate auto
+```
+
+必填配置速查（详见 DEPLOY.md §3）：板子 COM 口 · `tools.idf_version`/`addr2line` · 控制面 token · `jira.backend:rest`+凭据 · `feishu.approval_code`+app 凭据 · `ANTHROPIC_API_KEY`。
+
+---
+
+## 已实现的能力
+
+### M0：硬件 MCP 网关
+
+7 个 MCP tool，让本地/远程智能体作为 client 调用：
+
+| tool | 作用 | 占板级锁 |
 |---|---|---|
 | `list_boards` | 列出已注册板子 + 在线探测 | 否 |
 | `build` | 编译固件（docker `espressif/idf` 或本地 `idf.py`） | 否 |
@@ -86,18 +113,25 @@ pytest -q          # 30 个单测，全 mock，无需硬件
 
 ```
 src/autotest_mcp/
-  server.py        # FastMCP 注册所有 tool + 启动
-  transport.py     # bearer 鉴权 + mTLS + uvicorn（tailscale 不进代码）
-  concurrency.py   # 板级锁（queue/reject）
-  config.py        # YAML + env 加载
-  tools/           # device / symbolizer / serial_mon / flasher / builder / hardware
-config/boards.yaml.example
-tests/             # 每个 tool 的 mock 单测
+  server.py            # M0 硬件网关（FastMCP 注册所有 tool + 启动）
+  transport.py         # bearer 鉴权 + mTLS + uvicorn（tailscale 不进代码）
+  concurrency.py       # 板级锁（queue/reject）
+  config.py            # YAML + env 加载
+  tools/               # device / symbolizer / serial_mon / flasher / builder / hardware
+  defects/             # Defect 模型 + MockJiraClient + JiraRestClient + make_jira 工厂
+  agents/              # ReproPlanner / Diagnostician / Fixer / Summarizer
+  pipeline.py          # M1 复现+诊断
+  fix_pipeline.py      # M2 修复+复测闭环
+  git_client.py        # apply_file_edits + GhGitClient + FakeGitClient + GithubPrChecker
+  knowledge/           # Case + File/Vector KnowledgeStore + recall
+  feishu/              # 飞书审批门（gate + driver）
+  control_plane/       # Registry + JobQueue + ControlPlane + registrar + server
+  orchestrator/        # LangGraph 状态机（重试/人工门/终态/检查点）
+  run_m1.py / run_m2.py / run_m3.py / run_orchestrate.py / run_control_plane.py / run_gateway_register.py
+config/boards.yaml.example, config/defects.example.yaml
+docs/ARCHITECTURE.md, docs/DEPLOY.md
+tests/                 # 77 个 mock 单测（无硬件/无 key 全绿）
 ```
-
-## 尚未实现（M1+）
-
-Jira/Git/知识库 tool、VPS 控制面 + 注册中心 + 离线队列、LangGraph 编排与 4 个 agent、测试模式串口命令协议。
 
 ---
 
