@@ -15,7 +15,7 @@ import os
 import sys
 
 from .config import load_config
-from .defects.jira import MockJiraClient
+from .defects.jira import make_jira
 from .llm import LLM, default_client
 from .mcp_client import FakeHardwareClient, McpHardwareClient
 from .pipeline import run_repro_diagnose
@@ -51,7 +51,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     llm = _build_llm(cfg, args.fake)
-    jira = MockJiraClient(args.defects)
+    jira = make_jira(cfg, args.defects)
     defect = jira.get_defect(args.defect_id)
 
     if args.fake:

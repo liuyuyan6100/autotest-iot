@@ -19,6 +19,16 @@ class JiraClient(Protocol):
     def add_comment(self, defect_id: str, body: str) -> None: ...
 
 
+def make_jira(cfg, defects_override: str | None = None) -> "JiraClient":
+    """按 config.jira.backend 选 mock 或 真 Jira REST。defects_override 仅 mock 用。"""
+    j = cfg.jira
+    if j.backend == "rest":
+        from .jira_rest import JiraRestClient
+
+        return JiraRestClient(j.base_url, j.email, j.token, j.repro_field)
+    return MockJiraClient(defects_override or j.defects_path)
+
+
 class MockJiraClient:
     """从 yaml 文件读缺陷库。schema: {defects: [{id, title, ...}]}"""
 

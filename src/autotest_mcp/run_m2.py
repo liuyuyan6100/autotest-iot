@@ -14,7 +14,7 @@ import os
 import sys
 
 from .config import load_config
-from .defects.jira import MockJiraClient
+from .defects.jira import make_jira
 from .fix_pipeline import propose_fix, run_retest
 from .git_client import FakeGitClient, GhGitClient
 from .llm import LLM, default_client
@@ -51,7 +51,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     llm = _build_llm(cfg, args.fake)
-    defect = MockJiraClient(args.defects).get_defect(args.defect_id)
+    defect = make_jira(cfg, args.defects).get_defect(args.defect_id)
 
     from .knowledge.store import FileKnowledgeStore
 

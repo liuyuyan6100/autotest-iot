@@ -300,3 +300,26 @@ ANTHROPIC_API_KEY=... LARK_APP_ID=... LARK_APP_SECRET=... \
 ```
 
 测试：`pytest -q`（含 `_parse_status`、driver 通过→closed / 拒绝→rejected / 超时、LarkApprovalGate http 注入与 token 缓存）。
+
+---
+
+## 真 Jira / GitHub 接口（替换 mock）
+
+缺陷源与代码门都接真系统，由配置切换：
+
+- **JiraRestClient**（`defects/jira_rest.py`）：Jira Cloud REST api/2，`GET /issue/{key}` 取缺陷、`POST /issue/{key}/comment` 回写；basic auth（email:api_token）；http 层可注入；`_map_issue`/`_parse_repro` 把 Jira 字段映射成 `Defect`（结构化复现步骤来自可配置的自定义字段 `jira.repro_field`）。
+- **GithubPrChecker**（`git_client.py`）：`gh pr view <url> --json state,mergedAt` 查 PR 是否合并，runner 可注入——让人工门能真等"PR 合并"。
+- **`make_jira(cfg)`** 工厂：按 `jira.backend`（mock|rest）选实现；三个 CLI（run_m1/m2/orchestrate）统一走它。
+
+### 配置（config/boards.yaml）
+
+```yaml
+jira:
+  backend: rest                 # mock | rest
+  base_url: "https://yourorg.atlassian.net"
+  email: ""                     # 或 env JIRA_EMAIL
+  token: ""                     # API token；或 env JIRA_TOKEN
+  repro_field: "customfield_10001"  # 存结构化复现步骤的字段（可选）
+```
+
+> Jira 凭据/字段结构各家不同，所以 http/subprocess 全可注入、`_map_issue` 是纯函数——这台 Ubuntu 无 Jira 实例，照样 77 测试全绿（含 `_map_issue`、JiraRestClient http 注入、GithubPrChecker merged/open/fail、make_jira 工厂）。真实运行在用户机器配 `backend: rest` + 凭据即可。

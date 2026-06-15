@@ -57,6 +57,15 @@ feishu:
   poll_interval: 5.0
   timeout: 600.0
 
+# 缺陷源：mock（本地 yaml）或 rest（真 Jira Cloud）
+jira:
+  backend: mock           # mock | rest
+  base_url: ""            # rest：如 https://yourorg.atlassian.net
+  email: ""               # rest：或 env JIRA_EMAIL
+  token: ""               # rest：API token；或 env JIRA_TOKEN
+  repro_field: ""         # 存结构化复现步骤的自定义字段 id（如 customfield_10001）
+  defects_path: "config/defects.example.yaml"  # mock 用
+
 boards:
   boardA:
     port: COM5             # Windows；Linux 用 /dev/autotest/boardA 等 udev 别名

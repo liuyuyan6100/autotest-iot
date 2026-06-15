@@ -100,3 +100,22 @@ class FakeGitClient:
             "errors": errors,
             "status": "awaiting_review",
         }
+
+
+class GithubPrChecker:
+    """查 GitHub PR 是否已合并：`gh pr view <url> --json state,mergedAt`。runner 可注入。"""
+
+    def __init__(self, runner=_run) -> None:
+        self._run = runner
+
+    def is_merged(self, pr_url: str) -> bool:
+        import json
+
+        res = self._run(["gh", "pr", "view", pr_url, "--json", "state,mergedAt"], ".")
+        if res.returncode != 0:
+            return False
+        try:
+            data = json.loads(res.stdout or "{}")
+        except json.JSONDecodeError:
+            return False
+        return bool(data.get("mergedAt")) or str(data.get("state", "")).upper() == "MERGED"

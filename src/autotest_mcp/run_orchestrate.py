@@ -16,7 +16,7 @@ import sys
 from langgraph.types import Command
 
 from .config import load_config
-from .defects.jira import MockJiraClient
+from .defects.jira import make_jira
 from .git_client import FakeGitClient, GhGitClient
 from .knowledge.store import FileKnowledgeStore
 from .llm import LLM, default_client
@@ -60,7 +60,7 @@ def main() -> None:
 
     cfg = load_config(args.config)
     llm = _build_llm(cfg, args.fake)
-    jira = MockJiraClient(args.defects)
+    jira = make_jira(cfg, args.defects if args.defects != "config/defects.example.yaml" else None)
     knowledge = FileKnowledgeStore(args.kb) if args.kb else None
     # fake：第 1 次 capture(M1复现) 有 panic，之后(复测) 不再 panic → 演示"复现→修复→通过"
     hardware = FakeHardwareClient(args.board, panic_first_n=1) if args.fake else McpHardwareClient(cfg.mcp.url, cfg.mcp.token, args.board)

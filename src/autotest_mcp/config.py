@@ -95,6 +95,17 @@ class FeishuConfig(BaseModel):
     base_url: str = "https://open.feishu.cn/open-apis"
 
 
+class JiraConfig(BaseModel):
+    """缺陷源：mock（本地 yaml）或 rest（真 Jira Cloud）。rest 凭据也可用 env JIRA_EMAIL/JIRA_TOKEN。"""
+
+    backend: Literal["mock", "rest"] = "mock"
+    base_url: str = ""             # 如 https://yourorg.atlassian.net
+    email: str = ""
+    token: str = ""
+    repro_field: str = ""          # 存结构化复现步骤的自定义字段 id（如 customfield_10001）
+    defects_path: str = "config/defects.example.yaml"  # mock 用
+
+
 class AppConfig(BaseModel):
     boards: dict[str, BoardConfig] = Field(default_factory=dict)
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -104,6 +115,7 @@ class AppConfig(BaseModel):
     control_plane: ControlPlaneConfig = Field(default_factory=ControlPlaneConfig)
     gateway_reg: GatewayRegConfig = Field(default_factory=GatewayRegConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    jira: JiraConfig = Field(default_factory=JiraConfig)
 
 
 class EnvSettings(BaseSettings):
