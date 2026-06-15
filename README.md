@@ -1,5 +1,7 @@
 # autotest_iot — ESP32-S3 嵌入式自动化复测/修复闭环
 
+![CI](https://github.com/liuyuyan6100/autotest-iot/actions/workflows/ci.yml/badge.svg)
+
 把"取 Jira 缺陷 → 智能体操控硬件复测 → 抓 log 诊断 → 改代码 → 编译烧录 → 复测 → 知识沉淀"做成**软硬一体的智能体闭环**，全部可注入、可单测（**77 测试全绿**）。
 
 ```
