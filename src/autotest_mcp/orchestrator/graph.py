@@ -39,8 +39,9 @@ class LoopState(TypedDict, total=False):
     retest: RetestResult | None
     attempt: int
     max_attempts: int
-    verdict: str  # "closed" | "escalated"
+    verdict: str  # "closed" | "escalated" | "rejected"
     case_id: str
+    approved: bool  # 人工门结果
     notes: Annotated[list[str], operator.add]
 
 
@@ -91,10 +92,17 @@ def build_orchestrator(deps: Deps, max_attempts: int = 2):
 
     async def human_gate(state: LoopState) -> dict:
         if deps.auto_approve:
-            return {"notes": ["gate auto-approved"]}
+            return {"approved": True, "notes": ["gate auto-approved"]}
         pr_url = state["fix"].pr_url if state.get("fix") else ""
-        approved = interrupt({"need": "review-and-merge PR", "pr_url": pr_url, "attempt": state.get("attempt", 0)})
-        return {"notes": [f"gate decision={'approved' if approved else 'rejected'}"]}
+        # interrupt 暂停；resume 时 Command(resume=True/False) 的值成为 approved
+        approved = bool(interrupt({"need": "review-and-merge PR", "pr_url": pr_url, "attempt": state.get("attempt", 0)}))
+        return {"approved": approved, "notes": [f"gate decision={'approved' if approved else 'rejected'}"]}
+
+    def gate_decide(state: LoopState) -> str:
+        return "retest" if state.get("approved") else "rejected"
+
+    async def rejected_node(state: LoopState) -> dict:
+        return {"verdict": "rejected", "notes": ["人工门：审批被拒绝，终止"]}
 
     async def retest_node(state: LoopState) -> dict:
         rt = await run_retest(
@@ -137,12 +145,13 @@ def build_orchestrator(deps: Deps, max_attempts: int = 2):
     g.add_node("retest", retest_node)
     g.add_node("deposit", deposit)
     g.add_node("escalate", escalate)
+    g.add_node("rejected", rejected_node)
 
     g.add_edge(START, "intake")
     g.add_edge("intake", "run_m1")
     g.add_edge("run_m1", "propose_fix")
     g.add_edge("propose_fix", "human_gate")
-    g.add_edge("human_gate", "retest")
+    g.add_conditional_edges("human_gate", gate_decide, {"retest": "retest", "rejected": "rejected"})
     g.add_conditional_edges("retest", decide, {
         "deposit": "deposit",
         "propose_fix": "propose_fix",
@@ -150,6 +159,7 @@ def build_orchestrator(deps: Deps, max_attempts: int = 2):
     })
     g.add_edge("deposit", END)
     g.add_edge("escalate", END)
+    g.add_edge("rejected", END)
     return g.compile(checkpointer=MemorySaver())
 
 

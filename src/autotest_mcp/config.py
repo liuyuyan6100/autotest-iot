@@ -82,6 +82,19 @@ class GatewayRegConfig(BaseModel):
     register_on_start: bool = False
 
 
+class FeishuConfig(BaseModel):
+    """飞书审批门：把人工门换成飞书审批实例。app 凭据也可用 env LARK_APP_ID/LARK_APP_SECRET。"""
+
+    enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    approval_code: str = ""        # 飞书后台定义的审批流程 code（必填）
+    approver_open_id: str = ""     # 发起人/审批人 open_id（视审批流程节点而定）
+    poll_interval: float = 5.0
+    timeout: float = 600.0
+    base_url: str = "https://open.feishu.cn/open-apis"
+
+
 class AppConfig(BaseModel):
     boards: dict[str, BoardConfig] = Field(default_factory=dict)
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -90,6 +103,7 @@ class AppConfig(BaseModel):
     agents: AgentConfig = Field(default_factory=AgentConfig)
     control_plane: ControlPlaneConfig = Field(default_factory=ControlPlaneConfig)
     gateway_reg: GatewayRegConfig = Field(default_factory=GatewayRegConfig)
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
 
 class EnvSettings(BaseSettings):

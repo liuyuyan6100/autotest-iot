@@ -51,7 +51,12 @@ def main() -> None:
     ap.add_argument("--kb", default="")
     ap.add_argument("--fake", action="store_true")
     ap.add_argument("--max-attempts", type=int, default=2)
+    ap.add_argument("--gate", choices=["auto", "stdin", "feishu"], default=None,
+                    help="人工门方式：auto(跳过) / stdin(回车确认) / feishu(飞书审批)。不指定时 --fake→auto，否则 stdin")
     args = ap.parse_args()
+
+    if args.gate is None:
+        args.gate = "auto" if args.fake else "stdin"
 
     cfg = load_config(args.config)
     llm = _build_llm(cfg, args.fake)
@@ -73,7 +78,7 @@ def main() -> None:
         repo_dir=args.source, board_id=args.board,
         whitelist=cfg.agents.test_command_whitelist, addr2line=cfg.tools.addr2line,
         build_fn=(lambda s: {"ok": True, "build_dir": s}) if args.fake else _real_build_fn(cfg),
-        auto_approve=args.fake,
+        auto_approve=(args.gate == "auto"),
     )
     graph = build_orchestrator(deps, max_attempts=args.max_attempts)
     cfg_thread = {"configurable": {"thread_id": f"{args.defect_id}-1"}}
@@ -81,12 +86,27 @@ def main() -> None:
     async def run():
         result = await graph.ainvoke({"defect_id": args.defect_id}, cfg_thread)
         state = graph.get_state(cfg_thread)
-        # 若停在人工门（interrupt），等人确认后续跑
-        if state.next and not args.fake:
+        # 停在人工门（interrupt）时，按 gate 方式续跑
+        if state.next and "human_gate" in state.next:
             pr = state.values.get("fix").pr_url if state.values.get("fix") else ""
-            print(f"[gate] 请 review & 合并 PR: {pr}")
-            input("合并完成后回车继续...")
-            result = await graph.ainvoke(Command(resume=True), cfg_thread)
+            if args.gate == "feishu":
+                from .feishu import LarkApprovalGate, await_approval_and_resume
+
+                fs = cfg.feishu
+                gate = LarkApprovalGate(fs.approval_code, fs.app_id, fs.app_secret, fs.base_url)
+                print(f"[gate] 创建飞书审批：fix {pr}")
+                decision = await await_approval_and_resume(
+                    graph, cfg_thread, gate,
+                    title=f"autotest 修复审批 [{args.defect_id}]",
+                    content=f"PR: {pr}\n根因: {state.values.get('diagnosis').root_cause if state.values.get('diagnosis') else ''}",
+                    approver=fs.approver_open_id,
+                    poll_interval=fs.poll_interval, timeout=fs.timeout,
+                )
+                print(f"[gate] 审批结果: {decision}")
+            else:  # stdin
+                print(f"[gate] 请 review & 合并 PR: {pr}")
+                input("通过回车继续；想拒绝请 Ctrl-C 中止...")
+                result = await graph.ainvoke(Command(resume=True), cfg_thread)
         return result
 
     final = asyncio.run(run())

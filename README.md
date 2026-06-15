@@ -271,3 +271,32 @@ python -m autotest_mcp.run_gateway_register          # 注册+心跳到控制面
 ```
 
 > Windows 不 24h：它按需上线注册、关机 TTL 超时标离线；请求在线则路由、离线则排队续跑。核心逻辑纯 async、无网络可单测（clock/client/http 全可注入）。
+
+---
+
+## 飞书审批门（lark-approval）
+
+把编排器的人工门从「PR review / stdin 回车」升级为**飞书审批实例**：graph 在 `human_gate` 处 interrupt → driver 创建飞书审批并轮询 → 通过则 `Command(resume=True)` 续跑、拒绝/超时则 `resume=False` → 走 **rejected 终态**（不再无脑继续）。
+
+```
+... → propose_fix → human_gate(interrupt) ──╮
+                              飞书审批通过 ─→ resume=True  → retest → ...
+                              审批拒绝/超时 ─→ resume=False → rejected → END
+```
+
+组件：
+- `feishu/gate.py` — `ApprovalGate` 协议(create/status) + `LarkApprovalGate`(Feishu OpenAPI v3：建实例/查状态，tenant token 用 app_id/secret 换，http 可注入，`_parse_status` 纯函数兼容字符串/整数状态码) + `FakeApprovalGate`。
+- `feishu/driver.py` — `await_approval_and_resume`：建审批 → 轮询 → resume（clock/sleep 可注入）。
+- 接线：orchestrator 加 `approved` 状态 + 条件边（通过→retest / 拒绝→rejected→END）；`run_orchestrate --gate {auto,stdin,feishu}`。
+
+> lark-cli 的 approval 模块没有"创建实例"命令，所以走 OpenAPI（`POST /approval/v3/instances` + `GET .../instances/{code}`）。真实运行需在飞书后台定义审批流程（`approval_code`）+ app 凭据；逻辑在此用 `FakeApprovalGate` 全测。
+
+### 跑
+
+```bash
+# 飞书审批门（真实）：跑到 gate 暂停 → 建飞书审批 → 轮询 → 通过则续跑复测
+ANTHROPIC_API_KEY=... LARK_APP_ID=... LARK_APP_SECRET=... \
+  python -m autotest_mcp.run_orchestrate BUG-123 --source <仓库> --gate feishu
+```
+
+测试：`pytest -q`（含 `_parse_status`、driver 通过→closed / 拒绝→rejected / 超时、LarkApprovalGate http 注入与 token 缓存）。
