@@ -6,50 +6,13 @@
 
 > 一句话流程：`Jira → 复现 → 诊断 → Fixer → 人工门 → 烧录复测 → 沉淀`（失败自动重试，知识库越用越准）。
 
-```mermaid
-flowchart LR
-  J(["🎫 Jira 缺陷"]) --> RP["ReproPlanner<br/>规划复现"]
-  RP --> EX["执行复现<br/>flash · capture · inject"]
-  EX --> SYM["符号化<br/>backtrace→函数名"]
-  SYM --> DG["Diagnostician<br/>根因诊断"]
-  DG --> FX["Fixer<br/>产 patch · 开 PR"]
+![autotest_iot 架构与数据流](docs/flow.png)
 
-  FX --> G{{"🛑 人工门<br/>飞书审批 / PR 合并"}}
-  G -- 拒绝 · 超时 --> R(["❌ rejected 终态"])
-  G -- 通过 --> RT["rebuild → flash → 复测"]
-  RT -- "失败·未超限" --> FX
-  RT -- 通过 --> S["Summarizer"]
-  S --> KB[("📚 知识库 RAG<br/>召回 + 沉淀")]
-  KB -. 召回相似案例 .-> RP
-  KB -. 召回相似案例 .-> DG
+> 数据流（边上的文字）：`缺陷单 → 复现计划 → 串口log → 符号化log → 诊断 → patch/PR →（人工门）→ verdict → case`。复测失败自动回退 Fixer 重试（≤max 次）；知识库召回相似案例反馈给诊断；硬件请求经控制面路由到在线网关、离线则排队。
 
-  EX == 硬件请求 ==> CP
-  CP == 路由 / 离线排队 ==> GW
+**三层**：智能体编排层（LangGraph 状态机：重试 / 人工门 interrupt / 终态 / 检查点）· 控制面（VPS 常驻唯一入口，Registry 注册·心跳·TTL / Dispatcher 路由 / 离线队列上线续跑）· 硬件网关（贴板子的 Windows，按需上线，M0 MCP server + ESP32-S3 + 继电器）。
 
-  subgraph CP["🖥️ 控制面 · VPS 常驻唯一入口"]
-    REG[("Registry<br/>注册 · 心跳 · TTL")]
-    Q[("离线队列<br/>上线续跑")]
-  end
-
-  subgraph GW["🔧 硬件网关 · Windows 实验室（按需上线）"]
-    M0["M0 MCP server<br/>build · flash · serial · symbolize · relay"]
-    BOARD["ESP32-S3 + 继电器"]
-    M0 --- BOARD
-  end
-
-  classDef agent fill:#eef2ff,stroke:#4a6fa5,color:#1e293b,stroke-width:1.4px
-  classDef gate fill:#fff7d6,stroke:#cc9a06,color:#1e293b,stroke-width:2px
-  classDef term fill:#fde2e2,stroke:#a83232,color:#1e293b
-  classDef store fill:#dcf5e7,stroke:#1e7a46,color:#1e293b
-  classDef tier fill:#f4f6f8,stroke:#9aa5b1,color:#4b5563
-  class RP,EX,SYM,DG,FX,RT,S agent
-  class G gate
-  class R term
-  class KB,REG,Q store
-  class CP,GW tier
-```
-
-**三层**：智能体编排（取缺陷→复现→诊断→修复→复测→沉淀）· 控制面（VPS 唯一入口，注册/路由/离线队列）· 硬件网关（贴板子的 Windows，按需上线）。LangGraph 状态机串起全流程（重试 / 人工门 interrupt / 终态 / 检查点）。
+图由 [`scripts/gen_flow_png.py`](scripts/gen_flow_png.py) 生成（Pillow + 文泉驿正黑），改逻辑后重跑即可更新。
 
 ## 🚀 部署到真实环境
 
